@@ -1,8 +1,8 @@
 // src/pages/SuperAdmin/Dashboard.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Store, 
+import {
+  Store,
   CheckCircle,
   XCircle,
   DollarSign,
@@ -33,7 +33,6 @@ const SuperAdminDashboard = () => {
     inactiveShops: 0,
     totalRevenue: 0,
     growth: 0,
-    // Payment stats
     totalPayments: 0,
     pendingPayments: 0,
     completedPayments: 0,
@@ -52,44 +51,34 @@ const SuperAdminDashboard = () => {
     const checkAuth = async () => {
       try {
         const user = authService.getCurrentUser();
-        console.log('👤 Dashboard user:', user);
-        console.log('🍪 Cookies:', document.cookie);
-        
+
         if (!user || !user.is_admin) {
-          console.error('❌ Not super admin, redirecting to login');
           navigate('/superadmin/login');
           return;
         }
-        
-        // Verify session with backend
+
         try {
           const session = await authService.checkSession();
-          console.log('🔍 Session check:', session);
-          
+
           if (!session || !session.authenticated) {
-            console.error('❌ Session invalid, redirecting to login');
             localStorage.removeItem('user');
             navigate('/superadmin/login');
             return;
           }
         } catch (sessionError) {
-          console.error('❌ Session check failed:', sessionError);
-          if (user && user.is_admin) {
-            console.log('⚠️ Session check failed but user exists, proceeding...');
-          } else {
+          if (!user || !user.is_admin) {
             navigate('/superadmin/login');
             return;
           }
         }
-        
-        // Load dashboard data
+
         fetchData();
       } catch (error) {
-        console.error('❌ Auth check error:', error);
+        console.error('Auth check error:', error);
         navigate('/superadmin/login');
       }
     };
-    
+
     checkAuth();
   }, [navigate]);
 
@@ -100,64 +89,60 @@ const SuperAdminDashboard = () => {
       setError('');
 
       const user = authService.getCurrentUser();
-      console.log('👤 Dashboard user:', user);
-      
+
       if (!user || !user.is_admin) {
-        console.error('❌ Not super admin, redirecting...');
         navigate('/superadmin/login');
         return;
       }
 
-      // Fetch all shops
-      console.log('📡 Fetching shops...');
+      // Fetch shops
       const shopsResponse = await shopService.getAllShops();
-      console.log('✅ Shops response:', shopsResponse);
-      
       const shopsData = shopsResponse?.shops || shopsResponse || [];
-      console.log('✅ Shops data:', shopsData);
       setShops(shopsData);
 
-      // ✅ Fetch real payments from API
-      console.log('💰 Fetching payments...');
-      const paymentsResponse = await paymentService.getAllPayments();
-      console.log('✅ Payments response:', paymentsResponse);
-      
-      const paymentsData = paymentsResponse?.payments || paymentsResponse || [];
-      console.log('✅ Payments data:', paymentsData);
-      setPayments(paymentsData);
+      // Fetch payments
+      let paymentsData = [];
+      try {
+        const paymentsResponse = await paymentService.getAllPayments();
+        paymentsData = paymentsResponse?.payments || paymentsResponse || [];
+        setPayments(paymentsData);
+      } catch (paymentError) {
+        console.warn('Payments fetch failed:', paymentError);
+        paymentsData = [];
+      }
 
-      // ✅ Fetch payment stats from API
-      console.log('📊 Fetching payment stats...');
-      const statsResponse = await paymentService.getPaymentStats();
-      console.log('✅ Payment stats:', statsResponse);
-      
-      const paymentStatsData = statsResponse?.stats || {};
-      setPaymentStats(paymentStatsData);
+      // Fetch payment stats
+      let paymentStatsData = {};
+      try {
+        const statsResponse = await paymentService.getPaymentStats();
+        paymentStatsData = statsResponse?.stats || {};
+        setPaymentStats(paymentStatsData);
+      } catch (statsError) {
+        console.warn('Payment stats fetch failed:', statsError);
+        paymentStatsData = {};
+      }
 
       // Calculate shop stats
       const activeShops = shopsData.filter(s => s.status === 'active').length || 0;
       const inactiveShops = shopsData.filter(s => s.status === 'inactive').length || 0;
       const totalShopRevenue = shopsData.reduce((acc, shop) => acc + (shop.revenue || 0), 0) || 0;
-      
-      // Calculate payment stats
+
+      // Payment stats
       const totalRevenue = paymentStatsData.totalRevenue || 0;
       const totalPayments = paymentStatsData.totalPayments || 0;
       const pendingPayments = paymentStatsData.pendingPayments || 0;
       const completedPayments = paymentStatsData.completedPayments || 0;
       const failedPayments = paymentStatsData.failedPayments || 0;
       const monthlyRevenue = paymentStatsData.recentRevenue || 0;
-      
-      // Calculate monthly growth (compare with previous month)
+
+      // Monthly growth from completed payments
       let monthlyGrowth = 0;
-      // If we have revenue by plan data, we could calculate growth
-      // For now, use a placeholder or calculate from payments data
       if (paymentsData.length > 0) {
-        // Calculate growth based on monthly revenue
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         const sixtyDaysAgo = new Date();
         sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-        
+
         const recentPayments = paymentsData.filter(p => {
           const date = new Date(p.payment_date);
           return date >= thirtyDaysAgo && p.status === 'completed';
@@ -166,23 +151,21 @@ const SuperAdminDashboard = () => {
           const date = new Date(p.payment_date);
           return date >= sixtyDaysAgo && date < thirtyDaysAgo && p.status === 'completed';
         });
-        
+
         const recentTotal = recentPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
         const previousTotal = previousPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-        
-        monthlyGrowth = previousTotal > 0 
+
+        monthlyGrowth = previousTotal > 0
           ? ((recentTotal - previousTotal) / previousTotal * 100)
           : 0;
       }
-      
+
       setStats({
-        // Shop stats
         totalShops: shopsData.length || 0,
         activeShops,
         inactiveShops,
         totalRevenue: totalShopRevenue + totalRevenue,
         growth: 12,
-        // Payment stats
         totalPayments,
         pendingPayments,
         completedPayments,
@@ -190,46 +173,20 @@ const SuperAdminDashboard = () => {
         monthlyRevenue,
         monthlyGrowth
       });
-
     } catch (error) {
-      console.error('❌ Error fetching dashboard data:', error);
-      
+      console.error('Error fetching dashboard data:', error);
+
       if (error.response?.status === 401) {
-        console.error('🔒 Unauthorized - Redirecting to login');
         authService.logout();
         navigate('/superadmin/login');
         return;
       }
-      
-      // If payment API fails, try to load shops at least
-      if (error.config?.url?.includes('/payments')) {
-        console.warn('⚠️ Payment API failed, loading shops only...');
-        try {
-          const shopsResponse = await shopService.getAllShops();
-          const shopsData = shopsResponse?.shops || shopsResponse || [];
-          setShops(shopsData);
-          
-          const activeShops = shopsData.filter(s => s.status === 'active').length || 0;
-          const inactiveShops = shopsData.filter(s => s.status === 'inactive').length || 0;
-          setStats({
-            totalShops: shopsData.length || 0,
-            activeShops,
-            inactiveShops,
-            totalRevenue: 0,
-            growth: 0,
-            totalPayments: 0,
-            pendingPayments: 0,
-            completedPayments: 0,
-            failedPayments: 0,
-            monthlyRevenue: 0,
-            monthlyGrowth: 0
-          });
-        } catch (shopError) {
-          setError('Failed to load data. Please try again.');
-        }
-      } else {
-        setError(error.response?.data?.error || error.message || 'Failed to load dashboard data. Please try again.');
-      }
+
+      setError(
+        error.response?.data?.error ||
+        error.message ||
+        'Failed to load dashboard data. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
@@ -238,11 +195,9 @@ const SuperAdminDashboard = () => {
   // Handle logout
   const handleLogout = async () => {
     try {
-      console.log('🔓 Logging out...');
       await authService.logout();
-      console.log('✅ Logged out successfully');
     } catch (error) {
-      console.error('❌ Logout error:', error);
+      console.error('Logout error:', error);
     } finally {
       navigate('/superadmin/login');
     }
@@ -256,13 +211,8 @@ const SuperAdminDashboard = () => {
 
       const newStatus = shop.status === 'active' ? 'inactive' : 'active';
       await shopService.updateShop(shopId, { status: newStatus });
-      
-      const updatedShops = shops.map(s => 
-        s.id === shopId ? { ...s, status: newStatus } : s
-      );
-      setShops(updatedShops);
-      
-      // Refresh data to update stats
+
+      setShops(shops.map(s => (s.id === shopId ? { ...s, status: newStatus } : s)));
       await fetchData();
     } catch (error) {
       console.error('Error toggling shop status:', error);
@@ -279,13 +229,8 @@ const SuperAdminDashboard = () => {
     try {
       setIsDeleting(true);
       await shopService.deleteShop(shopId);
-      
-      const updatedShops = shops.filter(s => s.id !== shopId);
-      setShops(updatedShops);
-      
-      // Refresh data to update stats
+      setShops(shops.filter(s => s.id !== shopId));
       await fetchData();
-      
       setSelectedShop(null);
     } catch (error) {
       console.error('Error deleting shop:', error);
@@ -322,14 +267,14 @@ const SuperAdminDashboard = () => {
               <p className="font-medium">Error loading dashboard</p>
               <p className="text-sm mt-1">{error}</p>
               <div className="flex gap-3 mt-3">
-                <button 
+                <button
                   onClick={fetchData}
                   className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
                 >
                   <RefreshCw className="w-4 h-4" />
                   Retry
                 </button>
-                <button 
+                <button
                   onClick={handleLogout}
                   className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
                 >
@@ -354,7 +299,7 @@ const SuperAdminDashboard = () => {
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
-      {/* Header with logout */}
+      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">Super Admin Dashboard</h1>
@@ -378,7 +323,7 @@ const SuperAdminDashboard = () => {
         </div>
       </div>
 
-      {/* Shop Stats Cards - Row 1 */}
+      {/* Shop Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
@@ -389,7 +334,7 @@ const SuperAdminDashboard = () => {
             <Store className="h-10 w-10 text-blue-500" />
           </div>
         </div>
-        
+
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -399,7 +344,7 @@ const SuperAdminDashboard = () => {
             <CheckCircle className="h-10 w-10 text-green-500" />
           </div>
         </div>
-        
+
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -409,7 +354,7 @@ const SuperAdminDashboard = () => {
             <XCircle className="h-10 w-10 text-red-500" />
           </div>
         </div>
-        
+
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -433,7 +378,7 @@ const SuperAdminDashboard = () => {
         </div>
       </div>
 
-      {/* Payment Stats Cards - Row 2 */}
+      {/* Payment Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
@@ -444,7 +389,7 @@ const SuperAdminDashboard = () => {
             <CreditCard className="h-10 w-10 text-blue-500" />
           </div>
         </div>
-        
+
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -454,7 +399,7 @@ const SuperAdminDashboard = () => {
             <CheckCircle className="h-10 w-10 text-green-500" />
           </div>
         </div>
-        
+
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -464,7 +409,7 @@ const SuperAdminDashboard = () => {
             <Clock className="h-10 w-10 text-yellow-500" />
           </div>
         </div>
-        
+
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -547,11 +492,10 @@ const SuperAdminDashboard = () => {
                 </tr>
               ) : (
                 filteredShops.map((shop) => {
-                  // Calculate shop payment stats from real payment data
                   const shopPayments = payments.filter(p => p.shop_id === shop.id);
                   const totalShopRevenue = shopPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
                   const shopPaymentCount = shopPayments.length;
-                  
+
                   return (
                     <tr key={shop.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4">
@@ -589,20 +533,20 @@ const SuperAdminDashboard = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <button 
+                          <button
                             onClick={() => setSelectedShop(shop)}
                             className="text-blue-600 hover:text-blue-800 transition-colors"
                             title="View Details"
                           >
                             <Eye className="h-5 w-5" />
                           </button>
-                          <button 
+                          <button
                             className="text-green-600 hover:text-green-800 transition-colors"
                             title="Edit Shop"
                           >
                             <Edit className="h-5 w-5" />
                           </button>
-                          <button 
+                          <button
                             onClick={() => handleDeleteShop(shop.id)}
                             disabled={isDeleting}
                             className="text-red-600 hover:text-red-800 transition-colors disabled:opacity-50"
@@ -623,8 +567,8 @@ const SuperAdminDashboard = () => {
 
       {/* Add Shop Modal */}
       {showAddShop && (
-        <AddShopModal 
-          onClose={() => setShowAddShop(false)} 
+        <AddShopModal
+          onClose={() => setShowAddShop(false)}
           onSuccess={() => {
             setShowAddShop(false);
             fetchData();
@@ -634,8 +578,8 @@ const SuperAdminDashboard = () => {
 
       {/* Shop Details Modal */}
       {selectedShop && (
-        <ShopDetailsModal 
-          shop={selectedShop} 
+        <ShopDetailsModal
+          shop={selectedShop}
           onClose={() => setSelectedShop(null)}
           onDelete={handleDeleteShop}
           payments={payments.filter(p => p.shop_id === selectedShop.id)}
@@ -645,7 +589,9 @@ const SuperAdminDashboard = () => {
   );
 };
 
-// Add Shop Modal Component
+// ============================================================
+// ADD SHOP MODAL
+// ============================================================
 const AddShopModal = ({ onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -653,6 +599,7 @@ const AddShopModal = ({ onClose, onSuccess }) => {
     phone: '',
     address: '',
     owner: '',
+    password: '',
     subscription: 'basic'
   });
   const [loading, setLoading] = useState(false);
@@ -661,6 +608,25 @@ const AddShopModal = ({ onClose, onSuccess }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    // Client-side validation
+    if (!formData.name.trim()) {
+      setError('Shop name is required');
+      return;
+    }
+    if (!formData.email.trim()) {
+      setError('Email is required');
+      return;
+    }
+    if (!formData.owner.trim()) {
+      setError('Owner name is required');
+      return;
+    }
+    if (!formData.password || formData.password.length < 6) {
+      setError('Password must be at least 6 characters long');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -668,7 +634,11 @@ const AddShopModal = ({ onClose, onSuccess }) => {
       onSuccess();
     } catch (error) {
       console.error('Error creating shop:', error);
-      setError(error.response?.data?.error || 'Failed to create shop. Please try again.');
+      setError(
+        error.response?.data?.error ||
+        error.message ||
+        'Failed to create shop. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
@@ -678,68 +648,105 @@ const AddShopModal = ({ onClose, onSuccess }) => {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-8 max-w-md w-full max-h-[90vh] overflow-y-auto">
         <h2 className="text-2xl font-bold mb-6">Register New Shop</h2>
+
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
             {error}
           </div>
         )}
+
         <form onSubmit={handleSubmit}>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Shop Name *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Shop Name *
+              </label>
               <input
                 type="text"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.name}
-                onChange={(e) => setFormData({...formData, name: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 required
               />
             </div>
+
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email *
+              </label>
               <input
                 type="email"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.email}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 required
               />
             </div>
+
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Phone *
+              </label>
               <input
                 type="tel"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.phone}
-                onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 required
               />
             </div>
+
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Owner Name *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Owner Name *
+              </label>
               <input
                 type="text"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.owner}
-                onChange={(e) => setFormData({...formData, owner: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, owner: e.target.value })}
                 required
               />
             </div>
+
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Password *
+              </label>
+              <input
+                type="password"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                required
+                minLength={6}
+                placeholder="At least 6 characters"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                This will be the shop owner's login password.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Address
+              </label>
               <input
                 type="text"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.address}
-                onChange={(e) => setFormData({...formData, address: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
               />
             </div>
+
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Subscription Plan</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Subscription Plan
+              </label>
               <select
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.subscription}
-                onChange={(e) => setFormData({...formData, subscription: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, subscription: e.target.value })}
               >
                 <option value="basic">Basic - $99/month</option>
                 <option value="standard">Standard - $199/month</option>
@@ -747,6 +754,7 @@ const AddShopModal = ({ onClose, onSuccess }) => {
               </select>
             </div>
           </div>
+
           <div className="flex gap-3 mt-6">
             <button
               type="submit"
@@ -759,6 +767,7 @@ const AddShopModal = ({ onClose, onSuccess }) => {
               type="button"
               onClick={onClose}
               className="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+              disabled={loading}
             >
               Cancel
             </button>
@@ -769,7 +778,9 @@ const AddShopModal = ({ onClose, onSuccess }) => {
   );
 };
 
-// Shop Details Modal Component with payments
+// ============================================================
+// SHOP DETAILS MODAL
+// ============================================================
 const ShopDetailsModal = ({ shop, onClose, onDelete, payments = [] }) => {
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-KE', {
@@ -794,6 +805,7 @@ const ShopDetailsModal = ({ shop, onClose, onDelete, payments = [] }) => {
             ×
           </button>
         </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <p className="text-sm text-gray-500">Shop ID</p>
@@ -831,7 +843,9 @@ const ShopDetailsModal = ({ shop, onClose, onDelete, payments = [] }) => {
           </div>
           <div className="col-span-2">
             <p className="text-sm text-gray-500">Created</p>
-            <p className="font-medium">{shop.createdAt ? new Date(shop.createdAt).toLocaleDateString() : 'N/A'}</p>
+            <p className="font-medium">
+              {shop.createdAt ? new Date(shop.createdAt).toLocaleDateString() : 'N/A'}
+            </p>
           </div>
         </div>
 
@@ -858,7 +872,7 @@ const ShopDetailsModal = ({ shop, onClose, onDelete, payments = [] }) => {
           <button className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors">
             Edit Shop
           </button>
-          <button 
+          <button
             onClick={() => onDelete(shop.id)}
             className="flex-1 bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors"
           >

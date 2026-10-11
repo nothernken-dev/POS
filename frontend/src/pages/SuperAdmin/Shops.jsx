@@ -1,18 +1,18 @@
 // src/pages/SuperAdmin/Shops.jsx
 import React, { useState, useEffect } from 'react';
-import { 
-  Search, 
-  Plus, 
-  Eye, 
-  Edit, 
-  Trash2, 
-  CheckCircle, 
-  XCircle, 
+import {
+  Search,
+  Plus,
+  Eye,
+  Edit,
+  Trash2,
+  CheckCircle,
+  XCircle,
   Store,
   RefreshCw,
   AlertCircle
 } from 'lucide-react';
-import { shopService, authService } from '../../service/api'; // ✅ Remove superAdminService
+import { shopService, authService } from '../../service/api';
 
 const Shops = () => {
   const [shops, setShops] = useState([]);
@@ -34,7 +34,6 @@ const Shops = () => {
   const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
-    // Check if user is super admin
     if (!authService.isSuperAdmin()) {
       setError('Access denied. Super admin privileges required.');
       return;
@@ -46,84 +45,65 @@ const Shops = () => {
     setIsLoading(true);
     setError('');
     try {
-      // Get all shops from API service
       const response = await shopService.getAllShops();
-      
-      // ✅ Extract shops array from response
       const allShops = response?.shops || response || [];
-      
-      // Apply filters client-side
+
       let filteredShops = allShops;
-      
+
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
-        filteredShops = filteredShops.filter(shop => 
+        filteredShops = filteredShops.filter(shop =>
           shop.name?.toLowerCase().includes(term) ||
           shop.email?.toLowerCase().includes(term) ||
           shop.owner?.toLowerCase().includes(term)
         );
       }
-      
+
       if (filterStatus !== 'all') {
         filteredShops = filteredShops.filter(shop => shop.status === filterStatus);
       }
-      
+
       if (filterSubscription !== 'all') {
         filteredShops = filteredShops.filter(shop => shop.subscription === filterSubscription);
       }
-      
+
       setShops(filteredShops);
-      
-      // ✅ Calculate stats from shops
       calculateStats(allShops);
-      
     } catch (err) {
       console.error('Error loading shops:', err);
-      setError(err.response?.data?.error || 'Failed to load shops. Please try again.');
+      setError(err.response?.data?.error || err.message || 'Failed to load shops. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // ✅ Calculate stats from shops data
   const calculateStats = (shopsData) => {
     const total = shopsData.length;
     const active = shopsData.filter(s => s.status === 'active').length;
     const inactive = shopsData.filter(s => s.status === 'inactive').length;
     const premium = shopsData.filter(s => s.subscription === 'premium').length;
     const totalRevenue = shopsData.reduce((sum, shop) => sum + (shop.revenue || 0), 0);
-    
-    setStats({
-      total,
-      active,
-      inactive,
-      premium,
-      totalRevenue
-    });
+
+    setStats({ total, active, inactive, premium, totalRevenue });
   };
 
   const handleStatusToggle = async (shopId) => {
     try {
       const shop = shops.find(s => s.id === shopId);
       if (!shop) return;
-      
+
       const newStatus = shop.status === 'active' ? 'inactive' : 'active';
-      
+
       await shopService.updateShop(shopId, { status: newStatus });
-      
-      // Update local state
-      const updatedShops = shops.map(s => 
-        s.id === shopId ? { ...s, status: newStatus } : s
-      );
-      setShops(updatedShops);
-      
-      // ✅ Recalculate stats
-      const allShops = await shopService.getAllShops();
-      calculateStats(allShops?.shops || allShops || []);
-      
+
+      setShops(shops.map(s => (s.id === shopId ? { ...s, status: newStatus } : s)));
+
+      const response = await shopService.getAllShops();
+      const allShops = response?.shops || response || [];
+      calculateStats(allShops);
     } catch (err) {
       console.error('Error toggling status:', err);
-      setError('Failed to update shop status. Please try again.');
+      setError(err.response?.data?.error || err.message || 'Failed to update shop status.');
       setTimeout(() => setError(''), 5000);
     }
   };
@@ -132,36 +112,34 @@ const Shops = () => {
     if (!window.confirm('Are you sure you want to delete this shop? This action cannot be undone.')) {
       return;
     }
-    
+
     try {
       setIsDeleting(true);
       await shopService.deleteShop(shopId);
-      
-      // Remove from local state
+
       setShops(shops.filter(s => s.id !== shopId));
-      
-      // ✅ Recalculate stats
-      const allShops = await shopService.getAllShops();
-      calculateStats(allShops?.shops || allShops || []);
-      
-      // Close details modal if open
+
+      const response = await shopService.getAllShops();
+      const allShops = response?.shops || response || [];
+      calculateStats(allShops);
+
       if (showShopDetails && showShopDetails.id === shopId) {
         setShowShopDetails(null);
       }
     } catch (err) {
       console.error('Error deleting shop:', err);
-      setError('Failed to delete shop. Please try again.');
+      setError(err.response?.data?.error || err.message || 'Failed to delete shop.');
       setTimeout(() => setError(''), 5000);
     } finally {
       setIsDeleting(false);
     }
   };
 
-  // Reload shops when filters change
   useEffect(() => {
     if (!isLoading) {
       loadShops();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm, filterStatus, filterSubscription]);
 
   const subscriptionTypes = ['basic', 'standard', 'premium'];
@@ -192,16 +170,18 @@ const Shops = () => {
         </div>
       </div>
 
-      {/* Error Message */}
+      {/* Error */}
       {error && (
         <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 text-red-700">
           <AlertCircle className="h-5 w-5" />
           <span>{error}</span>
-          <button onClick={() => setError('')} className="ml-auto text-red-500 hover:text-red-700">×</button>
+          <button onClick={() => setError('')} className="ml-auto text-red-500 hover:text-red-700">
+            ×
+          </button>
         </div>
       )}
 
-      {/* Stats Cards */}
+      {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
         <div className="bg-white rounded-lg shadow p-4">
           <div className="flex items-center justify-between">
@@ -273,7 +253,9 @@ const Shops = () => {
           >
             <option value="all">All Plans</option>
             {subscriptionTypes.map(type => (
-              <option key={type} value={type}>{type.charAt(0).toUpperCase() + type.slice(1)}</option>
+              <option key={type} value={type}>
+                {type.charAt(0).toUpperCase() + type.slice(1)}
+              </option>
             ))}
           </select>
           <span className="text-sm text-gray-500 self-center">
@@ -290,7 +272,7 @@ const Shops = () => {
         </div>
       </div>
 
-      {/* Shops Table */}
+      {/* Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         {isLoading ? (
           <div className="flex justify-center items-center py-12">
@@ -346,18 +328,24 @@ const Shops = () => {
                           ) : (
                             <XCircle className="h-3 w-3" />
                           )}
-                          {shop.status ? shop.status.charAt(0).toUpperCase() + shop.status.slice(1) : 'Unknown'}
+                          {shop.status
+                            ? shop.status.charAt(0).toUpperCase() + shop.status.slice(1)
+                            : 'Unknown'}
                         </button>
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                          shop.subscription === 'premium' 
-                            ? 'bg-purple-100 text-purple-800' 
-                            : shop.subscription === 'standard'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {shop.subscription ? shop.subscription.charAt(0).toUpperCase() + shop.subscription.slice(1) : 'Basic'}
+                        <span
+                          className={`px-3 py-1 rounded-full text-sm font-medium ${
+                            shop.subscription === 'premium'
+                              ? 'bg-purple-100 text-purple-800'
+                              : shop.subscription === 'standard'
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}
+                        >
+                          {shop.subscription
+                            ? shop.subscription.charAt(0).toUpperCase() + shop.subscription.slice(1)
+                            : 'Basic'}
                         </span>
                       </td>
                       <td className="px-6 py-4">
@@ -367,21 +355,21 @@ const Shops = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
-                          <button 
+                          <button
                             onClick={() => setShowShopDetails(shop)}
                             className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                             title="View Details"
                           >
                             <Eye className="h-5 w-5" />
                           </button>
-                          <button 
+                          <button
                             onClick={() => setShowEditShop(shop)}
                             className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                             title="Edit Shop"
                           >
                             <Edit className="h-5 w-5" />
                           </button>
-                          <button 
+                          <button
                             onClick={() => handleDeleteShop(shop.id)}
                             disabled={isDeleting}
                             className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
@@ -397,7 +385,6 @@ const Shops = () => {
               </table>
             </div>
 
-            {/* Empty State */}
             {shops.length === 0 && (
               <div className="text-center py-12">
                 <Store className="h-16 w-16 text-gray-300 mx-auto mb-4" />
@@ -421,25 +408,29 @@ const Shops = () => {
 
       {/* Add Shop Modal */}
       {showAddShop && (
-        <AddShopModal 
-          onClose={() => setShowAddShop(false)} 
-          onSuccess={() => { loadShops(); }}
+        <AddShopModal
+          onClose={() => setShowAddShop(false)}
+          onSuccess={() => {
+            loadShops();
+          }}
         />
       )}
 
       {/* Edit Shop Modal */}
       {showEditShop && (
-        <EditShopModal 
-          shop={showEditShop} 
+        <EditShopModal
+          shop={showEditShop}
           onClose={() => setShowEditShop(null)}
-          onSuccess={() => { loadShops(); }}
+          onSuccess={() => {
+            loadShops();
+          }}
         />
       )}
 
       {/* Shop Details Modal */}
       {showShopDetails && (
-        <ShopDetailsModal 
-          shop={showShopDetails} 
+        <ShopDetailsModal
+          shop={showShopDetails}
           onClose={() => setShowShopDetails(null)}
           onEdit={() => {
             setShowShopDetails(null);
@@ -452,7 +443,9 @@ const Shops = () => {
   );
 };
 
-// Add Shop Modal Component
+// ============================================================
+// ADD SHOP MODAL
+// ============================================================
 const AddShopModal = ({ onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -468,16 +461,38 @@ const AddShopModal = ({ onClose, onSuccess }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setIsSubmitting(true);
     setError('');
-    
+
+    if (!formData.name.trim()) {
+      setError('Shop name is required');
+      return;
+    }
+    if (!formData.email.trim()) {
+      setError('Email is required');
+      return;
+    }
+    if (!formData.owner.trim()) {
+      setError('Owner name is required');
+      return;
+    }
+    if (!formData.password || formData.password.length < 6) {
+      setError('Password must be at least 6 characters long');
+      return;
+    }
+
+    setIsSubmitting(true);
+
     try {
       await shopService.createShop(formData);
       onSuccess();
       onClose();
     } catch (err) {
       console.error('Error creating shop:', err);
-      setError(err.response?.data?.error || 'Failed to register shop. Please try again.');
+      setError(
+        err.response?.data?.error ||
+        err.message ||
+        'Failed to register shop. Please try again.'
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -492,13 +507,13 @@ const AddShopModal = ({ onClose, onSuccess }) => {
             ×
           </button>
         </div>
-        
+
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
             {error}
           </div>
         )}
-        
+
         <form onSubmit={handleSubmit}>
           <div className="space-y-4">
             <div>
@@ -507,7 +522,7 @@ const AddShopModal = ({ onClose, onSuccess }) => {
                 type="text"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.name}
-                onChange={(e) => setFormData({...formData, name: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 required
                 placeholder="Enter shop name"
               />
@@ -518,7 +533,7 @@ const AddShopModal = ({ onClose, onSuccess }) => {
                 type="email"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.email}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 required
                 placeholder="shop@example.com"
               />
@@ -529,7 +544,7 @@ const AddShopModal = ({ onClose, onSuccess }) => {
                 type="password"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.password}
-                onChange={(e) => setFormData({...formData, password: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 required
                 placeholder="Min 6 characters"
                 minLength="6"
@@ -542,7 +557,7 @@ const AddShopModal = ({ onClose, onSuccess }) => {
                 type="tel"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.phone}
-                onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 required
                 placeholder="+1234567890"
               />
@@ -553,7 +568,7 @@ const AddShopModal = ({ onClose, onSuccess }) => {
                 type="text"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.owner}
-                onChange={(e) => setFormData({...formData, owner: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, owner: e.target.value })}
                 required
                 placeholder="Full name of shop owner"
               />
@@ -564,7 +579,7 @@ const AddShopModal = ({ onClose, onSuccess }) => {
                 type="text"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.address}
-                onChange={(e) => setFormData({...formData, address: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                 placeholder="Physical address"
               />
             </div>
@@ -573,7 +588,7 @@ const AddShopModal = ({ onClose, onSuccess }) => {
               <select
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.subscription}
-                onChange={(e) => setFormData({...formData, subscription: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, subscription: e.target.value })}
               >
                 <option value="basic">Basic - $99/month</option>
                 <option value="standard">Standard - $199/month</option>
@@ -610,14 +625,16 @@ const AddShopModal = ({ onClose, onSuccess }) => {
   );
 };
 
-// Edit Shop Modal Component
+// ============================================================
+// EDIT SHOP MODAL
+// ============================================================
 const EditShopModal = ({ shop, onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
-    name: shop.name,
-    email: shop.email,
-    phone: shop.phone,
+    name: shop.name || '',
+    email: shop.email || '',
+    phone: shop.phone || '',
     address: shop.address || '',
-    owner: shop.owner,
+    owner: shop.owner || '',
     subscription: shop.subscription || 'basic',
     password: ''
   });
@@ -628,20 +645,23 @@ const EditShopModal = ({ shop, onClose, onSuccess }) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError('');
-    
+
     try {
-      // Remove empty password from update
       const updateData = { ...formData };
       if (!updateData.password) {
         delete updateData.password;
       }
-      
+
       await shopService.updateShop(shop.id, updateData);
       onSuccess();
       onClose();
     } catch (err) {
       console.error('Error updating shop:', err);
-      setError(err.response?.data?.error || 'Failed to update shop. Please try again.');
+      setError(
+        err.response?.data?.error ||
+        err.message ||
+        'Failed to update shop. Please try again.'
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -656,13 +676,13 @@ const EditShopModal = ({ shop, onClose, onSuccess }) => {
             ×
           </button>
         </div>
-        
+
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
             {error}
           </div>
         )}
-        
+
         <form onSubmit={handleSubmit}>
           <div className="space-y-4">
             <div>
@@ -671,7 +691,7 @@ const EditShopModal = ({ shop, onClose, onSuccess }) => {
                 type="text"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.name}
-                onChange={(e) => setFormData({...formData, name: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 required
               />
             </div>
@@ -681,7 +701,7 @@ const EditShopModal = ({ shop, onClose, onSuccess }) => {
                 type="email"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.email}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 required
               />
             </div>
@@ -691,7 +711,7 @@ const EditShopModal = ({ shop, onClose, onSuccess }) => {
                 type="tel"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.phone}
-                onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 required
               />
             </div>
@@ -701,7 +721,7 @@ const EditShopModal = ({ shop, onClose, onSuccess }) => {
                 type="text"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.owner}
-                onChange={(e) => setFormData({...formData, owner: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, owner: e.target.value })}
                 required
               />
             </div>
@@ -711,7 +731,7 @@ const EditShopModal = ({ shop, onClose, onSuccess }) => {
                 type="text"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.address}
-                onChange={(e) => setFormData({...formData, address: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
               />
             </div>
             <div>
@@ -719,7 +739,7 @@ const EditShopModal = ({ shop, onClose, onSuccess }) => {
               <select
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.subscription}
-                onChange={(e) => setFormData({...formData, subscription: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, subscription: e.target.value })}
               >
                 <option value="basic">Basic - $99/month</option>
                 <option value="standard">Standard - $199/month</option>
@@ -727,12 +747,14 @@ const EditShopModal = ({ shop, onClose, onSuccess }) => {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">New Password (optional)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                New Password (optional)
+              </label>
               <input
                 type="password"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 value={formData.password}
-                onChange={(e) => setFormData({...formData, password: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 placeholder="Leave blank to keep current password"
                 minLength="6"
               />
@@ -768,12 +790,18 @@ const EditShopModal = ({ shop, onClose, onSuccess }) => {
   );
 };
 
-// Shop Details Modal Component
+// ============================================================
+// SHOP DETAILS MODAL
+// ============================================================
 const ShopDetailsModal = ({ shop, onClose, onEdit, onDelete }) => {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const handleDelete = async () => {
-    if (window.confirm('Are you sure you want to delete this shop? This action cannot be undone.')) {
+    if (
+      window.confirm(
+        'Are you sure you want to delete this shop? This action cannot be undone.'
+      )
+    ) {
       setIsDeleting(true);
       await onDelete(shop.id);
       setIsDeleting(false);
@@ -797,13 +825,23 @@ const ShopDetailsModal = ({ shop, onClose, onEdit, onDelete }) => {
           </div>
           <div>
             <p className="text-sm text-gray-500">Status</p>
-            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${
-              shop.status === 'active' ? 'bg-green-100 text-green-800' : 
-              shop.status === 'inactive' ? 'bg-red-100 text-red-800' :
-              'bg-yellow-100 text-yellow-800'
-            }`}>
-              {shop.status === 'active' ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-              {shop.status ? shop.status.charAt(0).toUpperCase() + shop.status.slice(1) : 'Unknown'}
+            <span
+              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${
+                shop.status === 'active'
+                  ? 'bg-green-100 text-green-800'
+                  : shop.status === 'inactive'
+                  ? 'bg-red-100 text-red-800'
+                  : 'bg-yellow-100 text-yellow-800'
+              }`}
+            >
+              {shop.status === 'active' ? (
+                <CheckCircle className="h-3 w-3" />
+              ) : (
+                <XCircle className="h-3 w-3" />
+              )}
+              {shop.status
+                ? shop.status.charAt(0).toUpperCase() + shop.status.slice(1)
+                : 'Unknown'}
             </span>
           </div>
           <div>
@@ -828,19 +866,25 @@ const ShopDetailsModal = ({ shop, onClose, onEdit, onDelete }) => {
           </div>
           <div>
             <p className="text-sm text-gray-500">Subscription</p>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-              shop.subscription === 'premium' 
-                ? 'bg-purple-100 text-purple-800' 
-                : shop.subscription === 'standard'
-                ? 'bg-blue-100 text-blue-800'
-                : 'bg-gray-100 text-gray-800'
-            }`}>
-              {shop.subscription ? shop.subscription.charAt(0).toUpperCase() + shop.subscription.slice(1) : 'Basic'}
+            <span
+              className={`px-3 py-1 rounded-full text-sm font-medium ${
+                shop.subscription === 'premium'
+                  ? 'bg-purple-100 text-purple-800'
+                  : shop.subscription === 'standard'
+                  ? 'bg-blue-100 text-blue-800'
+                  : 'bg-gray-100 text-gray-800'
+              }`}
+            >
+              {shop.subscription
+                ? shop.subscription.charAt(0).toUpperCase() + shop.subscription.slice(1)
+                : 'Basic'}
             </span>
           </div>
           <div>
             <p className="text-sm text-gray-500">Revenue</p>
-            <p className="font-bold text-lg text-gray-900">${shop.revenue ? shop.revenue.toFixed(2) : '0.00'}</p>
+            <p className="font-bold text-lg text-gray-900">
+              ${shop.revenue ? shop.revenue.toFixed(2) : '0.00'}
+            </p>
           </div>
           <div>
             <p className="text-sm text-gray-500">Users</p>
@@ -848,7 +892,9 @@ const ShopDetailsModal = ({ shop, onClose, onEdit, onDelete }) => {
           </div>
           <div>
             <p className="text-sm text-gray-500">Created</p>
-            <p className="font-medium">{shop.createdAt ? new Date(shop.createdAt).toLocaleDateString() : 'N/A'}</p>
+            <p className="font-medium">
+              {shop.createdAt ? new Date(shop.createdAt).toLocaleDateString() : 'N/A'}
+            </p>
           </div>
           <div>
             <p className="text-sm text-gray-500">Last Active</p>
@@ -857,20 +903,23 @@ const ShopDetailsModal = ({ shop, onClose, onEdit, onDelete }) => {
         </div>
 
         <div className="mt-6 flex gap-3 border-t pt-6">
-          <button 
+          <button
             onClick={onEdit}
             className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors"
           >
             Edit Shop
           </button>
-          <button 
+          <button
             onClick={handleDelete}
             disabled={isDeleting}
             className="flex-1 bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
           >
             {isDeleting ? 'Deleting...' : 'Delete Shop'}
           </button>
-          <button onClick={onClose} className="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300 transition-colors">
+          <button
+            onClick={onClose}
+            className="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+          >
             Close
           </button>
         </div>

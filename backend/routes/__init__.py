@@ -13,31 +13,15 @@ from routes.payment import init_payment_routes
 
 
 def init_routes(app):
-
-    """
-    Register all application routes.
-    """
-
     init_auth_routes(app)
-
     init_shop_routes(app)
-
     init_inventory_routes(app)
-
     init_sales_routes(app)
-
     init_expense_routes(app)
-
     init_customer_routes(app)
-
     init_supplier_routes(app)
-
     init_staff_routes(app)
-
     init_finance_routes(app)
-
     init_settings_routes(app)
-
     init_userguide_routes(app)
-
     init_payment_routes(app)

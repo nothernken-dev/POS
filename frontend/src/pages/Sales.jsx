@@ -1,10 +1,9 @@
 // src/pages/Sales.jsx
 import React, { useState, useEffect } from 'react';
-import { 
-  Search, 
-  Plus, 
-  Filter, 
-  MoreVertical, 
+import {
+  Search,
+  Plus,
+  Filter,
   Download,
   Eye,
   Printer,
@@ -12,9 +11,7 @@ import {
   TrendingUp,
   DollarSign,
   ShoppingCart,
-  Users,
   Calendar,
-  Clock,
   CheckCircle,
   XCircle,
   AlertCircle,
@@ -27,13 +24,18 @@ import {
   Trash2,
   Package,
   Edit,
-  RefreshCw,
   UserPlus,
   Phone,
-  List
+  Tag,
 } from 'lucide-react';
-import { salesService, inventoryService, customerService, reportService, authService } from '../service/api';
-import { saveAs } from 'file-saver';
+import {
+  salesService,
+  inventoryService,
+  customerService,
+  reportService,
+  authService,
+} from '../service/api';
+import { printReceipt } from '../utils/printReceipt';
 
 const Sales = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -51,8 +53,7 @@ const Sales = () => {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showCancelled, setShowCancelled] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
-  
-  // Sale form state
+
   const [saleForm, setSaleForm] = useState({
     customer_id: '',
     customer_name: '',
@@ -64,144 +65,130 @@ const Sales = () => {
     discount: 0,
     total: 0,
     notes: '',
-    status: 'Completed'
+    status: 'Completed',
   });
 
   const [salesData, setSalesData] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [quantity, setQuantity] = useState(1);
 
-  // Get current shop ID
+  // ---------- Helpers ----------
   const getShopId = () => {
     const user = authService.getCurrentUser();
     return user?.shopId;
   };
 
-  // Fetch products from inventory
+  // ---------- Data ----------
   const fetchProducts = async () => {
     try {
       const shopId = getShopId();
-      if (!shopId) {
-        setError('Shop not found. Please login again.');
-        return;
-      }
-
+      if (!shopId) return setError('Shop not found. Please login again.');
       const data = await inventoryService.getAllProducts(shopId);
-      const availableProducts = data.filter(p => p.stock > 0);
-      setInventoryData(availableProducts);
-    } catch (error) {
-      console.error('Error fetching products:', error);
-      setError(error.response?.data?.error || 'Failed to load products.');
+      setInventoryData((data || []).filter((p) => p.stock > 0));
+    } catch (err) {
+      console.error('Error fetching products:', err);
+      setError(err.response?.data?.error || 'Failed to load products.');
     }
   };
 
-  // Fetch customers
   const fetchCustomers = async () => {
     try {
       const shopId = getShopId();
       if (!shopId) return;
-
       const data = await customerService.getAllCustomers(shopId);
-      const activeCustomers = data.filter(c => c.status === 'Active' || c.status === 'active');
-      setCustomersData(activeCustomers);
-    } catch (error) {
-      console.error('Error fetching customers:', error);
+      setCustomersData(
+        (data || []).filter(
+          (c) => c.status === 'Active' || c.status === 'active'
+        )
+      );
+    } catch (err) {
+      console.error('Error fetching customers:', err);
     }
   };
 
-  // Fetch sales data
   const fetchSales = async () => {
     try {
       const shopId = getShopId();
-      if (!shopId) {
-        setError('Shop not found. Please login again.');
-        return;
-      }
-
+      if (!shopId) return setError('Shop not found. Please login again.');
       const data = await salesService.getAllSales(shopId);
-      setSalesData(data);
-    } catch (error) {
-      console.error('Error fetching sales:', error);
-      setError(error.response?.data?.error || 'Failed to load sales.');
+      setSalesData(data || []);
+    } catch (err) {
+      console.error('Error fetching sales:', err);
+      setError(err.response?.data?.error || 'Failed to load sales.');
     }
   };
 
   useEffect(() => {
-    const loadData = async () => {
+    (async () => {
       setLoading(true);
-      await Promise.all([
-        fetchProducts(),
-        fetchCustomers(),
-        fetchSales()
-      ]);
+      await Promise.all([fetchProducts(), fetchCustomers(), fetchSales()]);
       setLoading(false);
-    };
-    loadData();
+    })();
   }, []);
 
-  // Calculate totals when items change
   useEffect(() => {
-    const subtotal = saleForm.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const total = subtotal - saleForm.discount;
-    setSaleForm(prev => ({
-      ...prev,
-      subtotal,
-      total
-    }));
+    const subtotal = saleForm.items.reduce(
+      (sum, item) => sum + item.price * item.quantity,
+      0
+    );
+    const total = subtotal - (saleForm.discount || 0);
+    setSaleForm((prev) => ({ ...prev, subtotal, total }));
   }, [saleForm.items, saleForm.discount]);
 
-  // Handle customer selection
+  // ---------- Print ----------
+  const handlePrintReceipt = async (sale) => {
+    if (!sale) return;
+    const shop = authService.getCurrentUser();
+    await printReceipt(sale, shop);
+  };
+
+  // ---------- Customer selection ----------
   const handleCustomerSelect = (customerId) => {
     if (!customerId) {
       setSelectedCustomerId('');
-      setSaleForm(prev => ({
+      setSaleForm((prev) => ({
         ...prev,
         customer_id: '',
         customer_name: '',
         customer_email: '',
-        customer_phone: ''
+        customer_phone: '',
       }));
       return;
     }
-
-    const customer = customersData.find(c => c.id === parseInt(customerId));
+    const customer = customersData.find((c) => c.id === parseInt(customerId));
     if (customer) {
       setSelectedCustomerId(customerId);
-      setSaleForm(prev => ({
+      setSaleForm((prev) => ({
         ...prev,
         customer_id: customer.id,
         customer_name: customer.full_name,
         customer_email: customer.email,
-        customer_phone: customer.phone
+        customer_phone: customer.phone,
       }));
     }
   };
 
-  // Handle Export
+  // ---------- Export ----------
   const handleExport = async (format) => {
     try {
       setLoading(true);
       setError('');
-      
       const shopId = getShopId();
-      if (!shopId) {
-        setError('Shop not found. Please login again.');
-        return;
-      }
+      if (!shopId) return setError('Shop not found. Please login again.');
 
-      // Build params for filtering
       const params = {};
       if (selectedStatus !== 'All') params.status = selectedStatus;
-      
+
       if (selectedPeriod === 'Today') {
-        const today = new Date().toISOString().split('T')[0];
-        params.start_date = today;
-        params.end_date = today;
+        const t = new Date().toISOString().split('T')[0];
+        params.start_date = t;
+        params.end_date = t;
       } else if (selectedPeriod === 'Yesterday') {
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        params.start_date = yesterday.toISOString().split('T')[0];
-        params.end_date = yesterday.toISOString().split('T')[0];
+        const y = new Date();
+        y.setDate(y.getDate() - 1);
+        const s = y.toISOString().split('T')[0];
+        params.start_date = s;
+        params.end_date = s;
       } else if (selectedPeriod === 'This Week') {
         const now = new Date();
         const start = new Date(now);
@@ -217,133 +204,109 @@ const Sales = () => {
         params.start_date = start.toISOString().split('T')[0];
         params.end_date = end.toISOString().split('T')[0];
       }
-      
-      // Use report service to generate sales report
+
       const blob = await reportService.generateSalesReport(shopId, params);
-      
-      // Create download link
       const link = document.createElement('a');
-      const extension = format === 'excel' ? 'xlsx' : format === 'pdf' ? 'pdf' : 'docx';
-      link.download = `sales_report_${new Date().toISOString().split('T')[0]}.${extension}`;
+      const ext = format === 'excel' ? 'xlsx' : format === 'pdf' ? 'pdf' : 'docx';
+      link.download = `sales_report_${new Date().toISOString().split('T')[0]}.${ext}`;
       link.href = URL.createObjectURL(blob);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(link.href);
-      
+
       setSuccess(`Sales report exported as ${format.toUpperCase()} successfully!`);
       setShowExportMenu(false);
       setTimeout(() => setSuccess(''), 5000);
-    } catch (error) {
-      console.error('Export error:', error);
-      setError(error.response?.data?.error || 'Failed to export sales data');
+    } catch (err) {
+      console.error('Export error:', err);
+      setError(err.response?.data?.error || 'Failed to export sales data');
       setTimeout(() => setError(''), 5000);
     } finally {
       setLoading(false);
     }
   };
 
-  // Add product to sale
+  // ---------- Cart ----------
   const addProductToSale = () => {
     if (!selectedProduct) return;
-    
-    const existingItem = saleForm.items.find(item => item.product_id === selectedProduct.id);
-    
-    if (existingItem) {
-      const newQuantity = existingItem.quantity + quantity;
-      if (newQuantity > selectedProduct.stock) {
-        setError(`Only ${selectedProduct.stock} units available in stock`);
-        return;
-      }
-      setSaleForm(prev => ({
+    const existing = saleForm.items.find((i) => i.product_id === selectedProduct.id);
+
+    if (existing) {
+      const newQty = existing.quantity + quantity;
+      if (newQty > selectedProduct.stock)
+        return setError(`Only ${selectedProduct.stock} units available in stock`);
+      setSaleForm((prev) => ({
         ...prev,
-        items: prev.items.map(item =>
-          item.product_id === selectedProduct.id
-            ? { ...item, quantity: newQuantity }
-            : item
-        )
+        items: prev.items.map((i) =>
+          i.product_id === selectedProduct.id ? { ...i, quantity: newQty } : i
+        ),
       }));
     } else {
-      if (quantity > selectedProduct.stock) {
-        setError(`Only ${selectedProduct.stock} units available in stock`);
-        return;
-      }
-      setSaleForm(prev => ({
+      if (quantity > selectedProduct.stock)
+        return setError(`Only ${selectedProduct.stock} units available in stock`);
+      setSaleForm((prev) => ({
         ...prev,
-        items: [...prev.items, {
-          product_id: selectedProduct.id,
-          name: selectedProduct.name,
-          sku: selectedProduct.sku,
-          price: selectedProduct.price,
-          quantity: quantity,
-          stock: selectedProduct.stock,
-          image_url: selectedProduct.image_url
-        }]
+        items: [
+          ...prev.items,
+          {
+            product_id: selectedProduct.id,
+            name: selectedProduct.name,
+            sku: selectedProduct.sku,
+            price: selectedProduct.price,
+            quantity,
+            stock: selectedProduct.stock,
+            image_url: selectedProduct.image_url,
+          },
+        ],
       }));
     }
-    
+
     setSelectedProduct(null);
     setQuantity(1);
     setError('');
   };
 
-  // Remove item from sale
-  const removeItemFromSale = (productId) => {
-    setSaleForm(prev => ({
+  const removeItemFromSale = (productId) =>
+    setSaleForm((prev) => ({
       ...prev,
-      items: prev.items.filter(item => item.product_id !== productId)
+      items: prev.items.filter((i) => i.product_id !== productId),
+    }));
+
+  const updateItemQuantity = (productId, newQty) => {
+    const product = inventoryData.find((p) => p.id === productId);
+    if (!product) return setError('Product not found');
+    if (newQty > product.stock)
+      return setError(`Only ${product.stock} units available in stock`);
+    if (newQty < 1) return;
+    setSaleForm((prev) => ({
+      ...prev,
+      items: prev.items.map((i) =>
+        i.product_id === productId ? { ...i, quantity: newQty } : i
+      ),
     }));
   };
 
-  // Update item quantity
-  const updateItemQuantity = (productId, newQuantity) => {
-    const product = inventoryData.find(p => p.id === productId);
-    if (!product) {
-      setError('Product not found');
-      return;
-    }
-    if (newQuantity > product.stock) {
-      setError(`Only ${product.stock} units available in stock`);
-      return;
-    }
-    if (newQuantity < 1) return;
-    
-    setSaleForm(prev => ({
-      ...prev,
-      items: prev.items.map(item =>
-        item.product_id === productId
-          ? { ...item, quantity: newQuantity }
-          : item
-      )
-    }));
-  };
-
-  // Submit sale
+  // ---------- Submit ----------
   const handleSubmitSale = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
-    
+
     const shopId = getShopId();
-    if (!shopId) {
-      setError('Shop not found. Please login again.');
-      return;
-    }
-    
-    if (saleForm.items.length === 0) {
-      setError('Please add at least one product to the sale');
-      return;
-    }
+    if (!shopId) return setError('Shop not found. Please login again.');
+    if (saleForm.items.length === 0)
+      return setError('Please add at least one product to the sale');
 
     try {
       const saleData = {
         ...saleForm,
         customer_id: saleForm.customer_id || null,
-        items: saleForm.items.map(item => ({
-          product_id: item.product_id,
-          quantity: item.quantity,
-          price: item.price
-        }))
+        items: saleForm.items.map((i) => ({
+          product_id: i.product_id,
+          quantity: i.quantity,
+          price: i.price,
+        })),
       };
 
       const result = await salesService.createSale(shopId, saleData);
@@ -353,14 +316,16 @@ const Sales = () => {
       await fetchProducts();
       await fetchSales();
       setTimeout(() => setSuccess(''), 5000);
-    } catch (error) {
-      console.error('Error creating sale:', error);
-      setError(error.response?.data?.error || 'Failed to create sale');
+
+      // Auto-print
+      handlePrintReceipt(result);
+    } catch (err) {
+      console.error('Error creating sale:', err);
+      setError(err.response?.data?.error || 'Failed to create sale');
       setTimeout(() => setError(''), 5000);
     }
   };
 
-  // Reset form
   const resetForm = () => {
     setSaleForm({
       customer_id: '',
@@ -373,20 +338,19 @@ const Sales = () => {
       discount: 0,
       total: 0,
       notes: '',
-      status: 'Completed'
+      status: 'Completed',
     });
     setSelectedCustomerId('');
     setSelectedProduct(null);
     setQuantity(1);
   };
 
-  // Handle View Sale
+  // ---------- View / Edit / Cancel ----------
   const handleViewSale = (sale) => {
     setSelectedSale(sale);
     setShowViewModal(true);
   };
 
-  // Handle Edit Sale
   const handleEditSale = (sale) => {
     setSelectedSale(sale);
     setSaleForm({
@@ -400,97 +364,93 @@ const Sales = () => {
       discount: sale.discount || 0,
       total: sale.total || 0,
       notes: sale.notes || '',
-      status: sale.status || 'Completed'
+      status: sale.status || 'Completed',
     });
     setSelectedCustomerId(sale.customer_id || '');
     setShowEditModal(true);
   };
 
-  // Handle Update Sale
   const handleUpdateSale = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
-
     const shopId = getShopId();
-    if (!shopId) {
-      setError('Shop not found. Please login again.');
-      return;
-    }
+    if (!shopId) return setError('Shop not found. Please login again.');
 
     try {
-      const updateData = {
+      await salesService.updateSale(shopId, selectedSale.id, {
         status: saleForm.status,
         notes: saleForm.notes,
         customer_name: saleForm.customer_name,
         customer_email: saleForm.customer_email,
         customer_phone: saleForm.customer_phone,
-        payment_method: saleForm.payment_method
-      };
-
-      await salesService.updateSale(shopId, selectedSale.id, updateData);
-      setSuccess(`Sale #${selectedSale.sale_number || selectedSale.id} updated successfully!`);
+        payment_method: saleForm.payment_method,
+      });
+      setSuccess(
+        `Sale #${selectedSale.sale_number || selectedSale.id} updated successfully!`
+      );
       setShowEditModal(false);
       await fetchSales();
       setTimeout(() => setSuccess(''), 5000);
-    } catch (error) {
-      console.error('Error updating sale:', error);
-      setError(error.response?.data?.error || 'Failed to update sale');
+    } catch (err) {
+      console.error('Error updating sale:', err);
+      setError(err.response?.data?.error || 'Failed to update sale');
       setTimeout(() => setError(''), 5000);
     }
   };
 
-  // Handle Delete/Cancel Sale
   const handleCancelSale = async (saleId) => {
-    if (window.confirm('Are you sure you want to cancel this sale?')) {
-      const shopId = getShopId();
-      if (!shopId) {
-        setError('Shop not found. Please login again.');
-        return;
-      }
-
-      try {
-        await salesService.deleteSale(shopId, saleId);
-        setSuccess('Sale cancelled successfully!');
-        await fetchSales();
-        setTimeout(() => setSuccess(''), 5000);
-      } catch (error) {
-        console.error('Error cancelling sale:', error);
-        setError(error.response?.data?.error || 'Failed to cancel sale');
-        setTimeout(() => setError(''), 5000);
-      }
+    if (!window.confirm('Are you sure you want to cancel this sale?')) return;
+    const shopId = getShopId();
+    if (!shopId) return setError('Shop not found. Please login again.');
+    try {
+      await salesService.deleteSale(shopId, saleId);
+      setSuccess('Sale cancelled successfully!');
+      await fetchSales();
+      setTimeout(() => setSuccess(''), 5000);
+    } catch (err) {
+      console.error('Error cancelling sale:', err);
+      setError(err.response?.data?.error || 'Failed to cancel sale');
+      setTimeout(() => setError(''), 5000);
     }
   };
 
-  // Get status dot color
+  // ---------- UI helpers ----------
   const getStatusDot = (status) => {
-    switch(status) {
-      case 'Completed': return 'bg-green-500';
-      case 'Pending': return 'bg-yellow-500';
-      case 'Refunded': return 'bg-red-500';
-      case 'Cancelled': return 'bg-gray-400';
-      default: return 'bg-gray-400';
+    switch (status) {
+      case 'Completed':
+        return 'bg-green-500';
+      case 'Pending':
+        return 'bg-yellow-500';
+      case 'Refunded':
+        return 'bg-red-500';
+      default:
+        return 'bg-gray-400';
     }
   };
 
   const getStatusBgColor = (status) => {
-    switch(status) {
-      case 'Completed': return 'bg-green-50 text-green-700 border-green-200';
-      case 'Pending': return 'bg-yellow-50 text-yellow-700 border-yellow-200';
-      case 'Refunded': return 'bg-red-50 text-red-700 border-red-200';
-      case 'Cancelled': return 'bg-gray-50 text-gray-700 border-gray-200';
-      default: return 'bg-gray-50 text-gray-700 border-gray-200';
+    switch (status) {
+      case 'Completed':
+        return 'bg-green-50 text-green-700 border-green-200';
+      case 'Pending':
+        return 'bg-yellow-50 text-yellow-700 border-yellow-200';
+      case 'Refunded':
+        return 'bg-red-50 text-red-700 border-red-200';
+      default:
+        return 'bg-gray-50 text-gray-700 border-gray-200';
     }
   };
 
   const getPaymentIcon = (payment) => {
-    switch(payment) {
-      case 'Credit Card': return <CreditCard className="w-3.5 h-3.5" />;
-      case 'PayPal': return <Wallet className="w-3.5 h-3.5" />;
-      case 'Cash': return <DollarSign className="w-3.5 h-3.5" />;
-      case 'Debit Card': return <CreditCard className="w-3.5 h-3.5" />;
-      case 'M-Pesa': return <Wallet className="w-3.5 h-3.5" />;
-      default: return <Wallet className="w-3.5 h-3.5" />;
+    switch (payment) {
+      case 'Credit Card':
+      case 'Debit Card':
+        return <CreditCard className="w-3.5 h-3.5" />;
+      case 'Cash':
+        return <DollarSign className="w-3.5 h-3.5" />;
+      default:
+        return <Wallet className="w-3.5 h-3.5" />;
     }
   };
 
@@ -501,62 +461,77 @@ const Sales = () => {
       'from-gray-300 to-gray-500',
       'from-gray-400 to-gray-600',
     ];
-    const index = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return colors[index % colors.length];
+    const idx = (name || 'C')
+      .split('')
+      .reduce((a, c) => a + c.charCodeAt(0), 0);
+    return colors[idx % colors.length];
   };
 
   const statuses = ['All', 'Completed', 'Pending', 'Refunded', 'Cancelled'];
   const periods = ['Today', 'Yesterday', 'This Week', 'This Month', 'Custom'];
   const paymentMethods = ['Cash', 'Credit Card', 'Debit Card', 'M-Pesa', 'PayPal'];
 
-  // Filter sales data - Hide cancelled sales by default
-  const filteredData = salesData.filter(item => {
-    if (!showCancelled && item.status === 'Cancelled') {
-      return false;
-    }
-    
-    const idMatch = item.id ? String(item.id).toLowerCase().includes(searchTerm.toLowerCase()) : false;
-    const customerMatch = item.customer_name ? item.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) : false;
+  const filteredData = salesData.filter((item) => {
+    if (!showCancelled && item.status === 'Cancelled') return false;
+    const idMatch = item.id
+      ? String(item.id).toLowerCase().includes(searchTerm.toLowerCase())
+      : false;
+    const customerMatch = item.customer_name
+      ? item.customer_name.toLowerCase().includes(searchTerm.toLowerCase())
+      : false;
     const matchesSearch = idMatch || customerMatch;
-    const matchesStatus = selectedStatus === 'All' || item.status === selectedStatus;
+    const matchesStatus =
+      selectedStatus === 'All' || item.status === selectedStatus;
     return matchesSearch && matchesStatus;
   });
 
-  // Calculate stats - Exclude cancelled from calculations
-  const activeSales = salesData.filter(item => item.status !== 'Cancelled');
-  const totalSales = activeSales.reduce((sum, item) => sum + (item.total || 0), 0);
-  const completedSales = activeSales.filter(item => item.status === 'Completed').length;
+  const activeSales = salesData.filter((s) => s.status !== 'Cancelled');
+  const totalSales = activeSales.reduce((s, i) => s + (i.total || 0), 0);
+  const totalDiscount = activeSales.reduce((s, i) => s + (i.discount || 0), 0);
+  const completedSales = activeSales.filter((s) => s.status === 'Completed').length;
   const totalOrders = activeSales.length;
-  const pendingOrders = activeSales.filter(item => item.status === 'Pending').length;
-  const refundedOrders = activeSales.filter(item => item.status === 'Refunded').length;
+  const pendingOrders = activeSales.filter((s) => s.status === 'Pending').length;
+  const refundedOrders = activeSales.filter((s) => s.status === 'Refunded').length;
 
   return (
     <div>
+      {/* Alerts */}
       {error && (
         <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm flex items-center gap-2">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           <span>{error}</span>
-          <button onClick={() => setError('')} className="ml-auto text-red-500 hover:text-red-700">×</button>
+          <button
+            onClick={() => setError('')}
+            className="ml-auto text-red-500 hover:text-red-700"
+          >
+            ×
+          </button>
         </div>
       )}
       {success && (
         <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-3 text-green-700 text-sm">
           {success}
-          <button onClick={() => setSuccess('')} className="ml-2 text-green-500 hover:text-green-700">×</button>
+          <button
+            onClick={() => setSuccess('')}
+            className="ml-2 text-green-500 hover:text-green-700"
+          >
+            ×
+          </button>
         </div>
       )}
 
-      {/* Header Actions */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h2 className="text-xl font-semibold text-gray-900">Sales Management</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Track and manage all your sales orders</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Track and manage all your sales orders
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {/* Export Dropdown */}
           <div className="relative">
-            <button 
-              className="flex items-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm hover:shadow"
+            <button
+              className="flex items-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg text-sm font-medium shadow-sm hover:shadow"
               onClick={() => setShowExportMenu(!showExportMenu)}
             >
               <Download className="w-4 h-4" />
@@ -567,7 +542,7 @@ const Sales = () => {
               <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[200px] overflow-hidden">
                 <button
                   onClick={() => handleExport('excel')}
-                  className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-sm text-gray-700 flex items-center gap-3 transition-colors"
+                  className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-sm text-gray-700 flex items-center gap-3"
                 >
                   <span className="text-xl">📊</span>
                   <div>
@@ -577,7 +552,7 @@ const Sales = () => {
                 </button>
                 <button
                   onClick={() => handleExport('pdf')}
-                  className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-sm text-gray-700 flex items-center gap-3 border-t border-gray-100 transition-colors"
+                  className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-sm text-gray-700 flex items-center gap-3 border-t border-gray-100"
                 >
                   <span className="text-xl">📄</span>
                   <div>
@@ -587,7 +562,7 @@ const Sales = () => {
                 </button>
                 <button
                   onClick={() => handleExport('word')}
-                  className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-sm text-gray-700 flex items-center gap-3 border-t border-gray-100 transition-colors"
+                  className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-sm text-gray-700 flex items-center gap-3 border-t border-gray-100"
                 >
                   <span className="text-xl">📝</span>
                   <div>
@@ -598,13 +573,13 @@ const Sales = () => {
               </div>
             )}
           </div>
-          
-          <button 
+
+          <button
             onClick={() => {
               resetForm();
               setShowSaleModal(true);
             }}
-            className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-md hover:shadow-lg"
+            className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-md hover:shadow-lg"
           >
             <Plus className="w-4 h-4" />
             New Sale
@@ -612,64 +587,60 @@ const Sales = () => {
         </div>
       </div>
 
-      {/* Stats Cards - Excluding Cancelled */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-medium text-gray-600">Total Revenue</p>
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <DollarSign className="w-4 h-4 text-gray-600" />
-            </div>
-          </div>
-          <p className="text-2xl font-bold text-gray-900">KES {totalSales.toFixed(2)}</p>
-          <div className="flex items-center gap-1 mt-1 text-xs text-green-600">
-            <TrendingUp className="w-3 h-3" />
-            <span>+12.5% from last month</span>
-          </div>
-        </div>
-
-        <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-medium text-gray-600">Total Orders</p>
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <ShoppingCart className="w-4 h-4 text-gray-600" />
-            </div>
-          </div>
-          <p className="text-2xl font-bold text-gray-900">{totalOrders}</p>
-          <div className="flex items-center gap-1 mt-1 text-xs text-gray-500">
-            <Calendar className="w-3 h-3" />
-            <span>{pendingOrders} pending</span>
-          </div>
-        </div>
-
-        <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-medium text-gray-600">Completed</p>
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <CheckCircle className="w-4 h-4 text-gray-600" />
-            </div>
-          </div>
-          <p className="text-2xl font-bold text-green-600">{completedSales}</p>
-          <div className="flex items-center gap-1 mt-1 text-xs text-gray-500">
-            <span>{totalOrders > 0 ? ((completedSales / totalOrders) * 100).toFixed(0) : 0}% completion rate</span>
-          </div>
-        </div>
-
-        <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-medium text-gray-600">Refunded</p>
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <XCircle className="w-4 h-4 text-gray-600" />
-            </div>
-          </div>
-          <p className="text-2xl font-bold text-red-600">{refundedOrders}</p>
-          <div className="flex items-center gap-1 mt-1 text-xs text-gray-500">
-            <span>{totalOrders > 0 ? ((refundedOrders / totalOrders) * 100).toFixed(0) : 0}% refund rate</span>
-          </div>
-        </div>
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        <StatCard
+          label="Total Revenue"
+          value={`KES ${totalSales.toFixed(2)}`}
+          icon={<DollarSign className="w-4 h-4 text-gray-600" />}
+          sub="+12.5% from last month"
+          subColor="text-green-600"
+          subIcon={<TrendingUp className="w-3 h-3" />}
+        />
+        <StatCard
+          label="Total Orders"
+          value={totalOrders}
+          icon={<ShoppingCart className="w-4 h-4 text-gray-600" />}
+          sub={`${pendingOrders} pending`}
+          subIcon={<Calendar className="w-3 h-3" />}
+        />
+        <StatCard
+          label="Total Discount"
+          value={`KES ${totalDiscount.toFixed(2)}`}
+          icon={<Tag className="w-4 h-4 text-orange-600" />}
+          iconBg="bg-orange-100"
+          valueColor="text-orange-600"
+          sub={
+            totalOrders > 0 && totalSales > 0
+              ? `${((totalDiscount / (totalSales + totalDiscount)) * 100).toFixed(1)}% of gross`
+              : '0% of gross'
+          }
+        />
+        <StatCard
+          label="Completed"
+          value={completedSales}
+          icon={<CheckCircle className="w-4 h-4 text-gray-600" />}
+          valueColor="text-green-600"
+          sub={
+            totalOrders > 0
+              ? `${((completedSales / totalOrders) * 100).toFixed(0)}% completion rate`
+              : '0% completion rate'
+          }
+        />
+        <StatCard
+          label="Refunded"
+          value={refundedOrders}
+          icon={<XCircle className="w-4 h-4 text-gray-600" />}
+          valueColor="text-red-600"
+          sub={
+            totalOrders > 0
+              ? `${((refundedOrders / totalOrders) * 100).toFixed(0)}% refund rate`
+              : '0% refund rate'
+          }
+        />
       </div>
 
-      {/* Search and Filters */}
+      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-4 mb-6">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -686,10 +657,12 @@ const Sales = () => {
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
-              className="appearance-none pl-4 pr-10 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent bg-white cursor-pointer hover:border-gray-300 transition-colors"
+              className="appearance-none pl-4 pr-10 py-2.5 border border-gray-200 rounded-lg bg-white cursor-pointer hover:border-gray-300"
             >
-              {statuses.map(status => (
-                <option key={status} value={status}>{status}</option>
+              {statuses.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
               ))}
             </select>
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
@@ -698,16 +671,16 @@ const Sales = () => {
             <select
               value={selectedPeriod}
               onChange={(e) => setSelectedPeriod(e.target.value)}
-              className="appearance-none pl-4 pr-10 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent bg-white cursor-pointer hover:border-gray-300 transition-colors"
+              className="appearance-none pl-4 pr-10 py-2.5 border border-gray-200 rounded-lg bg-white cursor-pointer hover:border-gray-300"
             >
-              {periods.map(period => (
-                <option key={period} value={period}>{period}</option>
+              {periods.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
               ))}
             </select>
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           </div>
-          
-          {/* Show Cancelled Toggle */}
           <div className="flex items-center gap-2 px-3 py-1.5 border border-gray-200 rounded-lg bg-white">
             <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
               <input
@@ -719,7 +692,6 @@ const Sales = () => {
               Show Cancelled
             </label>
           </div>
-          
           <button className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
             <Filter className="w-4 h-4" />
             <span className="hidden sm:inline">More Filters</span>
@@ -727,35 +699,46 @@ const Sales = () => {
         </div>
       </div>
 
-      {/* Table View Only */}
+      {/* Table */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left py-3.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Order ID</th>
-                <th className="text-left py-3.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Customer</th>
-                <th className="text-left py-3.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
-                <th className="text-left py-3.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Item Names</th>
-                <th className="text-left py-3.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Items</th>
-                <th className="text-left py-3.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Qty</th>
-                <th className="text-left py-3.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Payment</th>
-                <th className="text-left py-3.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Total</th>
-                <th className="text-left py-3.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="py-3.5 px-2">Actions</th>
+                {[
+                  'Order ID',
+                  'Customer',
+                  'Date',
+                  'Item Names',
+                  'Items',
+                  'Qty',
+                  'Subtotal',
+                  'Discount',
+                  'Payment',
+                  'Total',
+                  'Status',
+                  '',
+                ].map((h, i) => (
+                  <th
+                    key={i}
+                    className="text-left py-3.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                  >
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="10" className="text-center py-12">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
+                  <td colSpan="12" className="text-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto" />
                     <p className="mt-4 text-gray-500">Loading sales...</p>
                   </td>
                 </tr>
               ) : filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className="text-center py-12 text-gray-500">
+                  <td colSpan="12" className="text-center py-12 text-gray-500">
                     <ShoppingCart className="w-12 h-12 mx-auto mb-3 text-gray-300" />
                     <p className="text-lg font-medium">No orders found</p>
                     <p className="text-sm">Try adjusting your search or filters</p>
@@ -764,25 +747,41 @@ const Sales = () => {
               ) : (
                 filteredData.map((order) => {
                   const uniqueItems = order.items?.length || 0;
-                  const totalQuantity = order.items?.reduce((sum, item) => sum + item.quantity, 0) || 0;
-                  const itemNames = order.items?.map(item => item.product_name || item.name).join(', ') || 'No items';
-                  
+                  const totalQuantity =
+                    order.items?.reduce((s, i) => s + i.quantity, 0) || 0;
+                  const itemNames =
+                    order.items
+                      ?.map((i) => i.product_name || i.name)
+                      .join(', ') || 'No items';
+                  const discount = order.discount || 0;
+
                   return (
-                    <tr key={order.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                      <td className="py-3 px-4">
-                        <span className="font-medium text-gray-600 hover:text-gray-800 cursor-pointer">
-                          #{order.sale_number || order.id}
-                        </span>
+                    <tr
+                      key={order.id}
+                      className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                    >
+                      <td className="py-3 px-4 font-medium text-gray-600">
+                        #{order.sale_number || order.id}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
-                          <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarColor(order.customer_name || 'C')} flex items-center justify-center text-white font-semibold text-xs`}>
+                          <div
+                            className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarColor(
+                              order.customer_name || 'C'
+                            )} flex items-center justify-center text-white font-semibold text-xs`}
+                          >
                             {(order.customer_name || 'C').charAt(0).toUpperCase()}
                           </div>
-                          <span className="text-gray-900 font-medium">{order.customer_name || 'Walk-in Customer'}</span>
+                          <span className="text-gray-900 font-medium">
+                            {order.customer_name || 'Walk-in Customer'}
+                          </span>
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-gray-600">{order.created_at ? new Date(order.created_at).toLocaleString() : 'N/A'}</td>
+                      <td className="py-3 px-4 text-gray-600">
+                        {order.created_at
+                          ? new Date(order.created_at).toLocaleString()
+                          : 'N/A'}
+                      </td>
                       <td className="py-3 px-4">
                         <div className="max-w-xs truncate" title={itemNames}>
                           {itemNames}
@@ -798,42 +797,62 @@ const Sales = () => {
                           {totalQuantity}
                         </span>
                       </td>
+                      <td className="py-3 px-4 text-gray-700">
+                        KES {order.subtotal?.toFixed(2) || '0.00'}
+                      </td>
+                      <td className="py-3 px-4">
+                        {discount > 0 ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-orange-50 text-orange-700 border border-orange-200">
+                            <Tag className="w-3 h-3" />
+                            -KES {discount.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-xs">—</span>
+                        )}
+                      </td>
                       <td className="py-3 px-4">
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
                           {getPaymentIcon(order.payment_method)}
                           {order.payment_method}
                         </span>
                       </td>
-                      <td className="py-3 px-4 font-semibold text-gray-900">KES {order.total?.toFixed(2) || '0.00'}</td>
+                      <td className="py-3 px-4 font-semibold text-gray-900">
+                        KES {order.total?.toFixed(2) || '0.00'}
+                      </td>
                       <td className="py-3 px-4">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${getStatusBgColor(order.status)}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${getStatusDot(order.status)}`}></span>
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${getStatusBgColor(
+                            order.status
+                          )}`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${getStatusDot(
+                              order.status
+                            )}`}
+                          />
                           {order.status}
                         </span>
                       </td>
                       <td className="py-3 px-2">
                         <div className="flex items-center gap-0.5">
-                          <button 
-                            onClick={() => handleViewSale(order)}
-                            className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-                            title="View"
-                          >
+                          <IconBtn title="View" onClick={() => handleViewSale(order)}>
                             <Eye className="w-4 h-4 text-gray-400 hover:text-gray-700" />
-                          </button>
-                          <button 
-                            onClick={() => handleEditSale(order)}
-                            className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-                            title="Edit"
+                          </IconBtn>
+                          <IconBtn
+                            title="Print Receipt"
+                            onClick={() => handlePrintReceipt(order)}
                           >
+                            <Printer className="w-4 h-4 text-gray-400 hover:text-gray-700" />
+                          </IconBtn>
+                          <IconBtn title="Edit" onClick={() => handleEditSale(order)}>
                             <Edit className="w-4 h-4 text-gray-400 hover:text-blue-600" />
-                          </button>
-                          <button 
-                            onClick={() => handleCancelSale(order.id)}
-                            className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                          </IconBtn>
+                          <IconBtn
                             title="Cancel"
+                            onClick={() => handleCancelSale(order.id)}
                           >
                             <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-600" />
-                          </button>
+                          </IconBtn>
                         </div>
                       </td>
                     </tr>
@@ -847,526 +866,632 @@ const Sales = () => {
 
       {/* New Sale Modal */}
       {showSaleModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
-              <h3 className="text-xl font-bold text-gray-900">New Sale</h3>
-              <button 
-                onClick={() => setShowSaleModal(false)}
-                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X className="w-6 h-6 text-gray-500" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmitSale} className="p-6">
-              {/* Customer Information */}
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Customer *
-                  </label>
-                  <div className="flex gap-2">
-                    <select
-                      value={selectedCustomerId}
-                      onChange={(e) => handleCustomerSelect(e.target.value)}
-                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    >
-                      <option value="">Walk-in Customer</option>
-                      {customersData.map(customer => (
-                        <option key={customer.id} value={customer.id}>
-                          {customer.full_name}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => window.location.href = '/customers'}
-                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
-                      title="Add New Customer"
-                    >
-                      <UserPlus className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Payment Method *
-                  </label>
-                  <select
-                    required
-                    value={saleForm.payment_method}
-                    onChange={(e) => setSaleForm({...saleForm, payment_method: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {paymentMethods.map(method => (
-                      <option key={method} value={method}>{method}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Customer Email
-                  </label>
-                  <input
-                    type="email"
-                    value={saleForm.customer_email}
-                    onChange={(e) => setSaleForm({...saleForm, customer_email: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter customer email"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Customer Phone
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-4 h-4 text-gray-400" />
-                    <input
-                      type="tel"
-                      value={saleForm.customer_phone}
-                      onChange={(e) => setSaleForm({...saleForm, customer_phone: e.target.value})}
-                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Enter customer phone number"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Product Selection */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Add Products
-                </label>
+        <ModalShell
+          title="New Sale"
+          onClose={() => setShowSaleModal(false)}
+          maxWidth="max-w-4xl"
+        >
+          <form onSubmit={handleSubmitSale} className="p-6">
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div>
+                <Label required>Customer</Label>
                 <div className="flex gap-2">
                   <select
-                    value={selectedProduct?.id || ''}
-                    onChange={(e) => {
-                      const product = inventoryData.find(p => p.id === parseInt(e.target.value));
-                      setSelectedProduct(product);
-                    }}
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={selectedCustomerId}
+                    onChange={(e) => handleCustomerSelect(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg bg-white"
                   >
-                    <option value="">Select a product...</option>
-                    {inventoryData.map(product => (
-                      <option key={product.id} value={product.id}>
-                        {product.name} (Stock: {product.stock} units - KES {product.price?.toFixed(2)})
+                    <option value="">Walk-in Customer</option>
+                    {customersData.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.full_name}
                       </option>
                     ))}
                   </select>
-                  <input
-                    type="number"
-                    min="1"
-                    value={quantity}
-                    onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                    className="w-24 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
                   <button
                     type="button"
-                    onClick={addProductToSale}
-                    disabled={!selectedProduct}
-                    className={`px-4 py-2 rounded-lg text-white font-medium transition-colors ${
-                      selectedProduct ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'
-                    }`}
+                    onClick={() => (window.location.href = '/customers')}
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+                    title="Add New Customer"
                   >
-                    <PlusIcon className="w-4 h-4" />
+                    <UserPlus className="w-4 h-4" />
                   </button>
                 </div>
-                {selectedProduct && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Available: {selectedProduct.stock} units
-                  </p>
-                )}
               </div>
-
-              {/* Cart Items */}
-              <div className="mb-6">
-                <h4 className="font-medium text-gray-700 mb-2">Cart Items</h4>
-                {saleForm.items.length === 0 ? (
-                  <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
-                    <ShoppingCart className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-gray-500 text-sm">No items added to cart</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {saleForm.items.map((item) => (
-                      <div key={item.product_id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
-                        <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center">
-                            {item.image_url ? (
-                              <img src={item.image_url} alt={item.name} className="w-full h-full object-cover rounded-lg" />
-                            ) : (
-                              <Package className="w-6 h-6 text-gray-500" />
-                            )}
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-900">{item.name}</p>
-                            <p className="text-sm text-gray-500">SKU: {item.sku}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => updateItemQuantity(item.product_id, item.quantity - 1)}
-                              className="p-1 hover:bg-gray-200 rounded-lg transition-colors"
-                            >
-                              <Minus className="w-4 h-4 text-gray-600" />
-                            </button>
-                            <span className="w-8 text-center font-medium">{item.quantity}</span>
-                            <button
-                              type="button"
-                              onClick={() => updateItemQuantity(item.product_id, item.quantity + 1)}
-                              className="p-1 hover:bg-gray-200 rounded-lg transition-colors"
-                            >
-                              <PlusIcon className="w-4 h-4 text-gray-600" />
-                            </button>
-                          </div>
-                          <span className="font-medium text-gray-900">KES {(item.price * item.quantity).toFixed(2)}</span>
-                          <button
-                            type="button"
-                            onClick={() => removeItemFromSale(item.product_id)}
-                            className="p-1 hover:bg-red-100 rounded-lg transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4 text-red-500" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Order Summary */}
-              <div className="border-t border-gray-200 pt-4 mb-6">
-                <div className="space-y-2 max-w-sm ml-auto">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Subtotal:</span>
-                    <span className="font-medium text-gray-900">KES {saleForm.subtotal.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Discount:</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={saleForm.discount}
-                      onChange={(e) => setSaleForm({...saleForm, discount: parseFloat(e.target.value) || 0})}
-                      className="w-24 px-2 py-1 border border-gray-200 rounded text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div className="flex justify-between text-lg font-bold pt-2 border-t border-gray-200">
-                    <span className="text-gray-900">Total:</span>
-                    <span className="text-blue-600">KES {saleForm.total.toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Notes */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Notes
-                </label>
-                <textarea
-                  value={saleForm.notes}
-                  onChange={(e) => setSaleForm({...saleForm, notes: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  rows="2"
-                  placeholder="Add any notes about this sale..."
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={() => setShowSaleModal(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex items-center gap-2 px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors shadow-md hover:shadow-lg"
-                >
-                  <Save className="w-4 h-4" />
-                  Complete Sale
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* View Sale Modal */}
-      {showViewModal && selectedSale && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
-              <h3 className="text-xl font-bold text-gray-900">Sale Details</h3>
-              <button 
-                onClick={() => setShowViewModal(false)}
-                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X className="w-6 h-6 text-gray-500" />
-              </button>
-            </div>
-
-            <div className="p-6">
-              {/* Sale Header */}
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div>
-                  <p className="text-sm text-gray-500">Sale Number</p>
-                  <p className="font-semibold text-gray-900">#{selectedSale.sale_number || selectedSale.id}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Date</p>
-                  <p className="font-semibold text-gray-900">{selectedSale.created_at ? new Date(selectedSale.created_at).toLocaleString() : 'N/A'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Customer</p>
-                  <p className="font-semibold text-gray-900">{selectedSale.customer_name || 'Walk-in Customer'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Email</p>
-                  <p className="font-semibold text-gray-900">{selectedSale.customer_email || 'N/A'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Phone</p>
-                  <p className="font-semibold text-gray-900">{selectedSale.customer_phone || 'N/A'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Status</p>
-                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${getStatusBgColor(selectedSale.status)}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${getStatusDot(selectedSale.status)}`}></span>
-                    {selectedSale.status}
-                  </span>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Payment Method</p>
-                  <p className="font-semibold text-gray-900">{selectedSale.payment_method}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Total</p>
-                  <p className="font-semibold text-blue-600 text-lg">KES {selectedSale.total?.toFixed(2) || '0.00'}</p>
-                </div>
-              </div>
-
-              {/* Items List */}
-              <div className="mb-6">
-                <h4 className="font-medium text-gray-700 mb-3">Items Purchased</h4>
-                <div className="bg-gray-50 rounded-lg overflow-hidden border border-gray-200">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="text-left py-2 px-3 font-medium text-gray-600">#</th>
-                        <th className="text-left py-2 px-3 font-medium text-gray-600">Product Name</th>
-                        <th className="text-left py-2 px-3 font-medium text-gray-600">SKU</th>
-                        <th className="text-right py-2 px-3 font-medium text-gray-600">Price</th>
-                        <th className="text-center py-2 px-3 font-medium text-gray-600">Qty</th>
-                        <th className="text-right py-2 px-3 font-medium text-gray-600">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedSale.items && selectedSale.items.length > 0 ? (
-                        selectedSale.items.map((item, idx) => (
-                          <tr key={idx} className="border-b border-gray-200 last:border-0">
-                            <td className="py-2 px-3 text-gray-500">{idx + 1}</td>
-                            <td className="py-2 px-3 font-medium text-gray-900">{item.product_name || item.name}</td>
-                            <td className="py-2 px-3 text-gray-600">{item.product_sku || item.sku}</td>
-                            <td className="py-2 px-3 text-right text-gray-600">KES {item.price?.toFixed(2) || '0.00'}</td>
-                            <td className="py-2 px-3 text-center">{item.quantity}</td>
-                            <td className="py-2 px-3 text-right font-medium text-gray-900">KES {(item.price * item.quantity)?.toFixed(2) || '0.00'}</td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan="6" className="py-4 text-center text-gray-500">No items found</td>
-                        </tr>
-                      )}
-                    </tbody>
-                    <tfoot className="bg-gray-100">
-                      <tr>
-                        <td colSpan="5" className="py-2 px-3 text-right font-medium text-gray-700">Subtotal:</td>
-                        <td className="py-2 px-3 text-right font-medium text-gray-900">KES {selectedSale.subtotal?.toFixed(2) || '0.00'}</td>
-                      </tr>
-                      <tr>
-                        <td colSpan="5" className="py-2 px-3 text-right font-medium text-gray-700">Discount:</td>
-                        <td className="py-2 px-3 text-right font-medium text-gray-900">KES {selectedSale.discount?.toFixed(2) || '0.00'}</td>
-                      </tr>
-                      <tr className="border-t-2 border-gray-300">
-                        <td colSpan="5" className="py-2 px-3 text-right font-bold text-gray-900">Total:</td>
-                        <td className="py-2 px-3 text-right font-bold text-blue-600">KES {selectedSale.total?.toFixed(2) || '0.00'}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </div>
-
-              {selectedSale.notes && (
-                <div className="mb-4">
-                  <p className="text-sm text-gray-500">Notes</p>
-                  <p className="text-gray-700">{selectedSale.notes}</p>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-                <button
-                  onClick={() => setShowViewModal(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
-                >
-                  Close
-                </button>
-                <button
-                  onClick={() => {
-                    setShowViewModal(false);
-                    handleEditSale(selectedSale);
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  <Edit className="w-4 h-4" />
-                  Edit Sale
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Sale Modal */}
-      {showEditModal && selectedSale && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
-              <h3 className="text-xl font-bold text-gray-900">Edit Sale</h3>
-              <button 
-                onClick={() => setShowEditModal(false)}
-                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X className="w-6 h-6 text-gray-500" />
-              </button>
-            </div>
-
-            <form onSubmit={handleUpdateSale} className="p-6">
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Sale Number
-                </label>
-                <input
-                  type="text"
-                  value={`#${selectedSale.sale_number || selectedSale.id}`}
-                  disabled
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
-                />
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Customer Name
-                </label>
-                <input
-                  type="text"
-                  value={saleForm.customer_name}
-                  onChange={(e) => setSaleForm({...saleForm, customer_name: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter customer name"
-                />
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Customer Email
-                </label>
-                <input
-                  type="email"
-                  value={saleForm.customer_email}
-                  onChange={(e) => setSaleForm({...saleForm, customer_email: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter customer email"
-                />
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Customer Phone
-                </label>
-                <input
-                  type="tel"
-                  value={saleForm.customer_phone}
-                  onChange={(e) => setSaleForm({...saleForm, customer_phone: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter customer phone"
-                />
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Payment Method *
-                </label>
+              <div>
+                <Label required>Payment Method</Label>
                 <select
                   required
                   value={saleForm.payment_method}
-                  onChange={(e) => setSaleForm({...saleForm, payment_method: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(e) =>
+                    setSaleForm({ ...saleForm, payment_method: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg"
                 >
-                  <option value="Cash">Cash</option>
-                  <option value="Credit Card">Credit Card</option>
-                  <option value="Debit Card">Debit Card</option>
-                  <option value="M-Pesa">M-Pesa</option>
-                  <option value="PayPal">PayPal</option>
+                  {paymentMethods.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
                 </select>
               </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Status *
-                </label>
-                <select
-                  required
-                  value={saleForm.status}
-                  onChange={(e) => setSaleForm({...saleForm, status: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="Completed">Completed</option>
-                  <option value="Pending">Pending</option>
-                  <option value="Refunded">Refunded</option>
-                  <option value="Cancelled">Cancelled</option>
-                </select>
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Notes
-                </label>
-                <textarea
-                  value={saleForm.notes}
-                  onChange={(e) => setSaleForm({...saleForm, notes: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  rows="3"
-                  placeholder="Add notes..."
+              <div>
+                <Label>Customer Email</Label>
+                <input
+                  type="email"
+                  value={saleForm.customer_email}
+                  onChange={(e) =>
+                    setSaleForm({ ...saleForm, customer_email: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                  placeholder="Enter customer email"
                 />
               </div>
+              <div>
+                <Label>Customer Phone</Label>
+                <div className="flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-gray-400" />
+                  <input
+                    type="tel"
+                    value={saleForm.customer_phone}
+                    onChange={(e) =>
+                      setSaleForm({ ...saleForm, customer_phone: e.target.value })
+                    }
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg"
+                    placeholder="Enter customer phone"
+                  />
+                </div>
+              </div>
+            </div>
 
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+            <div className="mb-6">
+              <Label>Add Products</Label>
+              <div className="flex gap-2">
+                <select
+                  value={selectedProduct?.id || ''}
+                  onChange={(e) => {
+                    const p = inventoryData.find(
+                      (x) => x.id === parseInt(e.target.value)
+                    );
+                    setSelectedProduct(p);
+                  }}
+                  className="flex-1 px-3 py-2 border border-gray-200 rounded-lg"
+                >
+                  <option value="">Select a product...</option>
+                  {inventoryData.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} (Stock: {p.stock} - KES {p.price?.toFixed(2)})
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  min="1"
+                  value={quantity}
+                  onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                  className="w-24 px-3 py-2 border border-gray-200 rounded-lg"
+                />
                 <button
                   type="button"
-                  onClick={() => setShowEditModal(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+                  onClick={addProductToSale}
+                  disabled={!selectedProduct}
+                  className={`px-4 py-2 rounded-lg text-white ${
+                    selectedProduct
+                      ? 'bg-blue-600 hover:bg-blue-700'
+                      : 'bg-gray-400 cursor-not-allowed'
+                  }`}
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  <Save className="w-4 h-4" />
-                  Update Sale
+                  <PlusIcon className="w-4 h-4" />
                 </button>
               </div>
-            </form>
+            </div>
+
+            <div className="mb-6">
+              <h4 className="font-medium text-gray-700 mb-2">Cart Items</h4>
+              {saleForm.items.length === 0 ? (
+                <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+                  <ShoppingCart className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-gray-500 text-sm">No items added to cart</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {saleForm.items.map((item) => (
+                    <div
+                      key={item.product_id}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center overflow-hidden">
+                          {item.image_url ? (
+                            <img
+                              src={item.image_url}
+                              alt={item.name}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <Package className="w-6 h-6 text-gray-500" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900">{item.name}</p>
+                          <p className="text-sm text-gray-500">SKU: {item.sku}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateItemQuantity(item.product_id, item.quantity - 1)
+                            }
+                            className="p-1 hover:bg-gray-200 rounded-lg"
+                          >
+                            <Minus className="w-4 h-4 text-gray-600" />
+                          </button>
+                          <span className="w-8 text-center font-medium">
+                            {item.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateItemQuantity(item.product_id, item.quantity + 1)
+                            }
+                            className="p-1 hover:bg-gray-200 rounded-lg"
+                          >
+                            <PlusIcon className="w-4 h-4 text-gray-600" />
+                          </button>
+                        </div>
+                        <span className="font-medium text-gray-900">
+                          KES {(item.price * item.quantity).toFixed(2)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeItemFromSale(item.product_id)}
+                          className="p-1 hover:bg-red-100 rounded-lg"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-500" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-gray-200 pt-4 mb-6">
+              <div className="space-y-2 max-w-sm ml-auto">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Subtotal:</span>
+                  <span className="font-medium text-gray-900">
+                    KES {saleForm.subtotal.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm items-center">
+                  <span className="text-gray-600 flex items-center gap-1">
+                    <Tag className="w-3.5 h-3.5" />
+                    Discount:
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={saleForm.discount}
+                    onChange={(e) =>
+                      setSaleForm({
+                        ...saleForm,
+                        discount: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="w-24 px-2 py-1 border border-gray-200 rounded text-right"
+                  />
+                </div>
+                <div className="flex justify-between text-lg font-bold pt-2 border-t border-gray-200">
+                  <span>Total:</span>
+                  <span className="text-blue-600">
+                    KES {saleForm.total.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <Label>Notes</Label>
+              <textarea
+                value={saleForm.notes}
+                onChange={(e) =>
+                  setSaleForm({ ...saleForm, notes: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                rows="2"
+                placeholder="Add any notes about this sale..."
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={() => setShowSaleModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex items-center gap-2 px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium shadow-md"
+              >
+                <Save className="w-4 h-4" />
+                Complete Sale
+              </button>
+            </div>
+          </form>
+        </ModalShell>
+      )}
+
+      {/* View Modal */}
+      {showViewModal && selectedSale && (
+        <ModalShell
+          title="Sale Details"
+          onClose={() => setShowViewModal(false)}
+          maxWidth="max-w-3xl"
+        >
+          <div className="p-6">
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <Info
+                label="Sale Number"
+                value={`#${selectedSale.sale_number || selectedSale.id}`}
+              />
+              <Info
+                label="Date"
+                value={
+                  selectedSale.created_at
+                    ? new Date(selectedSale.created_at).toLocaleString()
+                    : 'N/A'
+                }
+              />
+              <Info
+                label="Customer"
+                value={selectedSale.customer_name || 'Walk-in Customer'}
+              />
+              <Info label="Email" value={selectedSale.customer_email || 'N/A'} />
+              <Info label="Phone" value={selectedSale.customer_phone || 'N/A'} />
+              <div>
+                <p className="text-sm text-gray-500">Status</p>
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${getStatusBgColor(
+                    selectedSale.status
+                  )}`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${getStatusDot(
+                      selectedSale.status
+                    )}`}
+                  />
+                  {selectedSale.status}
+                </span>
+              </div>
+              <Info label="Payment Method" value={selectedSale.payment_method} />
+              <div>
+                <p className="text-sm text-gray-500">Total</p>
+                <p className="font-semibold text-blue-600 text-lg">
+                  KES {selectedSale.total?.toFixed(2) || '0.00'}
+                </p>
+              </div>
+            </div>
+
+            <h4 className="font-medium text-gray-700 mb-3">Items Purchased</h4>
+            <div className="bg-gray-50 rounded-lg overflow-hidden border border-gray-200">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="text-left py-2 px-3 font-medium text-gray-600">
+                      #
+                    </th>
+                    <th className="text-left py-2 px-3 font-medium text-gray-600">
+                      Product
+                    </th>
+                    <th className="text-left py-2 px-3 font-medium text-gray-600">
+                      SKU
+                    </th>
+                    <th className="text-right py-2 px-3 font-medium text-gray-600">
+                      Price
+                    </th>
+                    <th className="text-center py-2 px-3 font-medium text-gray-600">
+                      Qty
+                    </th>
+                    <th className="text-right py-2 px-3 font-medium text-gray-600">
+                      Total
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedSale.items?.length > 0 ? (
+                    selectedSale.items.map((item, idx) => (
+                      <tr key={idx} className="border-b border-gray-200 last:border-0">
+                        <td className="py-2 px-3 text-gray-500">{idx + 1}</td>
+                        <td className="py-2 px-3 font-medium text-gray-900">
+                          {item.product_name || item.name}
+                        </td>
+                        <td className="py-2 px-3 text-gray-600">
+                          {item.product_sku || item.sku}
+                        </td>
+                        <td className="py-2 px-3 text-right text-gray-600">
+                          KES {item.price?.toFixed(2) || '0.00'}
+                        </td>
+                        <td className="py-2 px-3 text-center">{item.quantity}</td>
+                        <td className="py-2 px-3 text-right font-medium text-gray-900">
+                          KES{' '}
+                          {(
+                            (item.price || 0) * (item.quantity || 0)
+                          ).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="6" className="py-4 text-center text-gray-500">
+                        No items found
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                <tfoot className="bg-gray-100">
+                  <tr>
+                    <td
+                      colSpan="5"
+                      className="py-2 px-3 text-right font-medium text-gray-700"
+                    >
+                      Subtotal:
+                    </td>
+                    <td className="py-2 px-3 text-right font-medium text-gray-900">
+                      KES {selectedSale.subtotal?.toFixed(2) || '0.00'}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td
+                      colSpan="5"
+                      className="py-2 px-3 text-right font-medium text-gray-700"
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <Tag className="w-3.5 h-3.5 text-orange-500" />
+                        Discount:
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-right font-medium text-orange-600">
+                      {selectedSale.discount > 0
+                        ? `-KES ${selectedSale.discount.toFixed(2)}`
+                        : 'KES 0.00'}
+                    </td>
+                  </tr>
+                  <tr className="border-t-2 border-gray-300">
+                    <td
+                      colSpan="5"
+                      className="py-2 px-3 text-right font-bold text-gray-900"
+                    >
+                      Total:
+                    </td>
+                    <td className="py-2 px-3 text-right font-bold text-blue-600">
+                      KES {selectedSale.total?.toFixed(2) || '0.00'}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {selectedSale.notes && (
+              <div className="mt-4">
+                <p className="text-sm text-gray-500">Notes</p>
+                <p className="text-gray-700">{selectedSale.notes}</p>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-6">
+              <button
+                onClick={() => setShowViewModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => handlePrintReceipt(selectedSale)}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg text-sm font-medium"
+              >
+                <Printer className="w-4 h-4" />
+                Print Receipt
+              </button>
+              <button
+                onClick={() => {
+                  setShowViewModal(false);
+                  handleEditSale(selectedSale);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium"
+              >
+                <Edit className="w-4 h-4" />
+                Edit Sale
+              </button>
+            </div>
           </div>
-        </div>
+        </ModalShell>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && selectedSale && (
+        <ModalShell
+          title="Edit Sale"
+          onClose={() => setShowEditModal(false)}
+          maxWidth="max-w-lg"
+        >
+          <form onSubmit={handleUpdateSale} className="p-6">
+            <div className="mb-4">
+              <Label>Sale Number</Label>
+              <input
+                type="text"
+                value={`#${selectedSale.sale_number || selectedSale.id}`}
+                disabled
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
+              />
+            </div>
+            <EditField
+              label="Customer Name"
+              value={saleForm.customer_name}
+              onChange={(v) => setSaleForm({ ...saleForm, customer_name: v })}
+            />
+            <EditField
+              label="Customer Email"
+              type="email"
+              value={saleForm.customer_email}
+              onChange={(v) => setSaleForm({ ...saleForm, customer_email: v })}
+            />
+            <EditField
+              label="Customer Phone"
+              type="tel"
+              value={saleForm.customer_phone}
+              onChange={(v) => setSaleForm({ ...saleForm, customer_phone: v })}
+            />
+            <div className="mb-4">
+              <Label required>Payment Method</Label>
+              <select
+                required
+                value={saleForm.payment_method}
+                onChange={(e) =>
+                  setSaleForm({ ...saleForm, payment_method: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              >
+                {paymentMethods.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="mb-4">
+              <Label required>Status</Label>
+              <select
+                required
+                value={saleForm.status}
+                onChange={(e) =>
+                  setSaleForm({ ...saleForm, status: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              >
+                <option>Completed</option>
+                <option>Pending</option>
+                <option>Refunded</option>
+                <option>Cancelled</option>
+              </select>
+            </div>
+            <div className="mb-4">
+              <Label>Notes</Label>
+              <textarea
+                value={saleForm.notes}
+                onChange={(e) =>
+                  setSaleForm({ ...saleForm, notes: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                rows="3"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={() => setShowEditModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium"
+              >
+                <Save className="w-4 h-4" />
+                Update Sale
+              </button>
+            </div>
+          </form>
+        </ModalShell>
       )}
     </div>
   );
 };
+
+// ---------- Reusable Tailwind components ----------
+
+const StatCard = ({
+  label,
+  value,
+  icon,
+  iconBg = 'bg-gray-100',
+  valueColor = 'text-gray-900',
+  sub,
+  subColor = 'text-gray-500',
+  subIcon,
+}) => (
+  <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5">
+    <div className="flex items-center justify-between mb-2">
+      <p className="text-sm font-medium text-gray-600">{label}</p>
+      <div className={`p-2 ${iconBg} rounded-lg`}>{icon}</div>
+    </div>
+    <p className={`text-2xl font-bold ${valueColor}`}>{value}</p>
+    {sub && (
+      <div className={`flex items-center gap-1 mt-1 text-xs ${subColor}`}>
+        {subIcon}
+        <span>{sub}</span>
+      </div>
+    )}
+  </div>
+);
+
+const IconBtn = ({ children, onClick, title }) => (
+  <button
+    onClick={onClick}
+    title={title}
+    className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+  >
+    {children}
+  </button>
+);
+
+const Label = ({ children, required }) => (
+  <label className="block text-sm font-medium text-gray-700 mb-1">
+    {children} {required && '*'}
+  </label>
+);
+
+const Info = ({ label, value }) => (
+  <div>
+    <p className="text-sm text-gray-500">{label}</p>
+    <p className="font-semibold text-gray-900">{value}</p>
+  </div>
+);
+
+const EditField = ({ label, value, onChange, type = 'text' }) => (
+  <div className="mb-4">
+    <Label>{label}</Label>
+    <input
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+    />
+  </div>
+);
+
+const ModalShell = ({ title, onClose, children, maxWidth = 'max-w-3xl' }) => (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div
+      className={`bg-white rounded-2xl ${maxWidth} w-full max-h-[90vh] overflow-y-auto`}
+    >
+      <div className="flex items-center justify-between p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
+        <h3 className="text-xl font-bold text-gray-900">{title}</h3>
+        <button
+          onClick={onClose}
+          className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+        >
+          <X className="w-6 h-6 text-gray-500" />
+        </button>
+      </div>
+      {children}
+    </div>
+  </div>
+);
 
 export default Sales;
