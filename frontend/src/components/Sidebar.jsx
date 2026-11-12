@@ -61,7 +61,7 @@ const Sidebar = ({ isMobile, onClose }) => {
 
   const handleLogout = async () => {
     try {
-      await fetch('http://localhost:5000/api/shop/logout', {
+      await fetch('/api/shop/logout', {
         method: 'POST',
         credentials: 'include'
       });
