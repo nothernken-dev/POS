@@ -29,7 +29,7 @@ def utcnow():
 login_manager = LoginManager()
 login_manager.login_view = None
 
-DEFAULT_FRONTEND_URL = "https://pos-frontend-j0hd.onrender.com"
+DEFAULT_FRONTEND_URL = "https://pos-sigma-henna.vercel.app/"
 LOCAL_FRONTEND_URLS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
